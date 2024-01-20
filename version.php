@@ -26,6 +26,6 @@ defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'block_roadmap';
 $plugin->release = '0.1.0';
-$plugin->version = 2024011903;
+$plugin->version = 2024011904;
 $plugin->requires = 2020061500;
 $plugin->maturity = MATURITY_ALPHA;

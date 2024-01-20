@@ -47,6 +47,10 @@ class block_roadmap extends block_base {
      */
     public function get_content() {
 
+        global $PAGE;
+        // TODO: store these things in variables?
+        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'init', []);
+
         if ($this->content !== null) {
             return $this->content;
         }
