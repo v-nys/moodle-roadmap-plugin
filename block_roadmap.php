@@ -18,9 +18,16 @@
  * Block roadmap is defined here.
  *
  * @package     block_roadmap
- * @copyright   2022 Vincent Nys <vincent.nys@ap.be>
+ * @copyright   2024 Vincent Nys <vincent.nys@ap.be>
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
+
+ // may need some of these...
+// require_once('../../config.php');
+// require_once($CFG->dirroot . '/course/modlib.php');
+// defined('MOODLE_INTERNAL') || die();
+// require_once($CFG->dirroot . '/course/lib.php');
+
 class block_roadmap extends block_base {
 
     /**
@@ -33,12 +40,8 @@ class block_roadmap extends block_base {
 
     /** Where to show the block. */
     public function default_region() {
-        // assuming Boost theme
-        // some themes support "header", which might be better
-        return 'content';
+        return 'jumbotron';
     }
-
-
 
     /**
      * Returns the block contents.
@@ -46,32 +49,19 @@ class block_roadmap extends block_base {
      * @return stdClass The block contents.
      */
     public function get_content() {
-
         global $PAGE;
-        // TODO: store these things in variables?
-        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'init', []);
-
-        if ($this->content !== null) {
-            return $this->content;
-        }
-
-        if (empty($this->instance)) {
-            $this->content = '';
-            return $this->content;
-        }
-
+        global $DB;
+        global $COURSE;
+        // TODO: use data from mdl_clusters table here
+        // should be able to get data for this course and pass that to init?
+        $serializations = $DB->get_records('clusters', array("courseid" => $COURSE->id));
+        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', $serializations);
         $this->content = new stdClass();
         $this->content->items = array();
         $this->content->icons = array();
         $this->content->footer = '';
-
-        if (!empty($this->config->text)) {
-            $this->content->text = $this->config->text;
-        } else {
-            $text = 'Please define the content text in /blocks/roadmap/block_roadmap.php.';
-            $this->content->text = $text;
-        }
-
+        $text = "<div id=\"roadmap\" />";
+        $this->content->text = $text;
         return $this->content;
     }
 
