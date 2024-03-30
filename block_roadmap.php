@@ -52,10 +52,8 @@ class block_roadmap extends block_base {
         global $PAGE;
         global $DB;
         global $COURSE;
-        // TODO: use data from mdl_clusters table here
-        // should be able to get data for this course and pass that to init?
         $serializations = $DB->get_records('clusters', array("courseid" => $COURSE->id));
-        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', $serializations);
+        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', [$serializations]);
         $this->content = new stdClass();
         $this->content->items = array();
         $this->content->icons = array();

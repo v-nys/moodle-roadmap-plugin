@@ -1,6 +1,5 @@
 export const jsInit = (serializations) => {
-    // seems like this can be called multiple times
-    // so checking if node is still present and not doing anything otherwise
+    // TODO: copy blog code so that combined cluster is built
     const node = document.getElementById('roadmap');
     if (node) {
         console.debug(serializations);
