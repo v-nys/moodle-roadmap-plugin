@@ -6,6 +6,7 @@ import Dagre.Attributes as DA
 import Dict
 import Graph as G
 import Html
+import Html.Events
 import MyDagre
 import MyList
 import Render as R
@@ -18,15 +19,22 @@ import Yaml.Decode as YDecode
 import List.Extra
 import YamlHelp
 import String.Extra
+import List.Nonempty exposing (ListNonempty)
 
 type Model
     = DecodingError
     | ValidModel ValidModel
 
--- could use a ziplist here instead
--- one graph should always be displayed, so...
-type alias ValidModel =
-    List { graph : Graph, roots: List GraphNode }
+
+rotateLeft : ListNonempty a -> Int -> ListNonempty a
+rotateLeft z n =
+    if n == 0
+    then z
+    else case z of
+        (h, []) -> z
+        (h1, (h2::t)) -> (h2, (t ++ [h1]))
+
+type alias ValidModel = ListNonempty { name: String, graph : Graph, roots: List GraphNode }
 
 
 type alias Graph =
@@ -52,6 +60,7 @@ type Edge
 type Msg
     = SelectEdge ( Int, Int )
     | SelectNode Int
+    | RotateLeft Int
 
 
 isSameGraphNode : { a | id : String, namespace : String } -> { b | id : String, namespace : String } -> Bool
@@ -81,7 +90,7 @@ init flags =
         allGraphNodesResult : Result YDecode.Error (List GraphNode)
         allGraphNodesResult = List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
 
-        separateClusterResults : List (Result YDecode.Error { graph : Graph, roots: List GraphNode })
+        separateClusterResults : List (Result YDecode.Error { name: String, graph : Graph, roots: List GraphNode })
         separateClusterResults =
           List.map
           (\{cluster, yaml} ->
@@ -89,11 +98,17 @@ init flags =
             (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
             allGraphNodesResult)
           flags
-        combinedResult : Result YDecode.Error (List { graph : Graph, roots: List GraphNode })
+
+        combinedResult : Result YDecode.Error (List { name: String, graph : Graph, roots: List GraphNode })
         combinedResult = List.foldr (\separateResult acc -> Result.map2 (::) separateResult acc) (Ok []) separateClusterResults
+
+        modelDataResult = case combinedResult of
+            Ok (head::tail) -> Ok <| List.Nonempty.fromPair head tail
+            Ok [] -> Err <| YDecode.Parsing "List of clusters cannot be empty."
+            Err e -> Err e
     in
-        case combinedResult of
-            Ok lst -> (ValidModel lst, Cmd.none) -- may change if I switch to ziplist
+        case modelDataResult of
+            Ok lst -> (ValidModel lst, Cmd.none)
             Err e -> (Debug.log (Debug.toString e) (DecodingError, Cmd.none))
 
 update : Msg -> Model -> ( Model, Cmd msg )
@@ -104,6 +119,11 @@ update msg model =
 
         SelectEdge ( from, to ) ->
             ( model, Cmd.none )
+
+        RotateLeft n ->
+            case model of
+                ValidModel modelData -> ( ValidModel (rotateLeft modelData n), Cmd.none )
+                DecodingError -> ( model, Cmd.none )
 
 
 viewGraph : Graph -> List GraphNode -> List (Html.Attribute Msg) -> Html.Html Msg
@@ -158,16 +178,19 @@ viewGraph g roots extraAttributes =
 view : Model -> Html.Html Msg
 view model =
     case model of
-        ValidModel [] ->
-            Html.div
-                []
-                [ Html.text "Need to have at least one cluster. Replace with ziplist later." ]
-
-        -- obviously only shows first graph ATM
-        ValidModel ({ graph, roots } :: clusters) ->
-            Html.div
-                []
-                [viewGraph graph roots []]
+        ValidModel (({ name, graph, roots },_) as modelData) ->
+            let
+                buttonList =
+                  List.Nonempty.indexedMap
+                    (\idx elem -> { cluster = elem.name, button = Html.button [Html.Events.onClick (RotateLeft idx)] [Html.text elem.name] })
+                    modelData
+            in
+                Html.div
+                    []
+                    [ Html.div
+                      []
+                      (buttonList |> List.Nonempty.toList |> List.sortBy .cluster |> List.map .button)
+                    , Html.div [] [viewGraph graph roots []]]
         DecodingError -> 
             Html.div
                 []
@@ -188,7 +211,7 @@ main =
         , subscriptions = subscriptions
         }
 
-clusterDecoder : String -> List GraphNode -> YDecode.Decoder { graph : Graph, roots : List GraphNode }
+clusterDecoder : String -> List GraphNode -> YDecode.Decoder { name: String, graph : Graph, roots : List GraphNode }
 clusterDecoder clusterName allGraphNodes =
     let
         rootIdsDecoder =
@@ -270,7 +293,9 @@ clusterDecoder clusterName allGraphNodes =
     in
     YDecode.map4
         (\graphNodes allTypeEdges anyTypeEdges roots ->
-            { graph =
+            {
+              name = clusterName,
+              graph =
                 G.fromNodesAndEdges
                     (List.indexedMap (\index contents -> { id = index, label = contents }) graphNodes)
                     (allTypeEdges ++ anyTypeEdges)
