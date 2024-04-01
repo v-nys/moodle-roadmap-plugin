@@ -7,16 +7,26 @@ import Dict
 import Graph as G
 import Html
 import MyDagre
+import MyList
 import Render as R
 import Render.StandardDrawers as RSD
 import Render.StandardDrawers.Attributes as RSDA
 import Render.StandardDrawers.Types as RSDT
 import TypedSvg as TS
 import TypedSvg.Attributes as TSA
+import Yaml.Decode as YDecode
+import List.Extra
+import YamlHelp
+import String.Extra
 
+type Model
+    = DecodingError
+    | ValidModel ValidModel
 
-type alias Model =
-    String
+-- could use a ziplist here instead
+-- one graph should always be displayed, so...
+type alias ValidModel =
+    List { graph : Graph, roots: List GraphNode }
 
 
 type alias Graph =
@@ -26,34 +36,17 @@ type alias Graph =
 type alias GraphNode =
     { id : String, namespace : String, title : String }
 
+type alias GraphNodeId =
+    { id : String, namespace : String }
+
 
 type EdgeType
     = All
     | AtLeastOne
 
+type Edge
+    = Edge { start : GraphNodeId, end : GraphNodeId } EdgeType
 
-
--- TODO: replace with deserialized (from YAML) graph if this works
-exampleGraph : Graph
-exampleGraph =
-    let
-        nodes =
-            [ G.Node 1 { id = "node1", namespace = "cluster1", title = "Node 1" }
-            , G.Node 2 { id = "node2", namespace = "cluster2", title = "Node 2" }
-            , G.Node 3 { id = "node3", namespace = "cluster3", title = "Node 3" }
-            ]
-
-        edges =
-            [ G.Edge 1 2 All
-            , G.Edge 2 3 All
-            ]
-    in
-    G.fromNodesAndEdges nodes edges
-
-
-exampleGraphRoots : List GraphNode
-exampleGraphRoots =
-    [ { id = "node1", namespace = "cluster1", title = "Node 1" } ]
 
 
 type Msg
@@ -67,23 +60,50 @@ isSameGraphNode graphNodeId graphNode =
 
 
 
--- TODO: change to Json.Decode.Value and decode manually for more control later
+-- TODO: change flags to Json.Decode.Value and decode manually for more control later
 
 
 init : List { cluster : String, yaml : String } -> ( Model, Cmd msg )
 init flags =
-    Debug.log (Debug.toString flags)
-        ( "No element selected!!, click on an edge/node to select it", Cmd.none )
+    let
+        nodeListDecoder : String -> YDecode.Decoder (List GraphNode)
+        nodeListDecoder clusterName =
+            YDecode.field "nodes" <|
+                YDecode.list <|
+                    YDecode.map3 GraphNode
+                        (YDecode.field "id" YDecode.string)
+                        (YDecode.succeed clusterName)
+                        (YDecode.field "title" YDecode.string)
 
+        clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
+        clusterGraphNodesResults = List.map (\{cluster, yaml} -> YDecode.fromString (nodeListDecoder cluster) yaml) flags
+
+        allGraphNodesResult : Result YDecode.Error (List GraphNode)
+        allGraphNodesResult = List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
+
+        separateClusterResults : List (Result YDecode.Error { graph : Graph, roots: List GraphNode })
+        separateClusterResults =
+          List.map
+          (\{cluster, yaml} ->
+            Result.andThen
+            (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
+            allGraphNodesResult)
+          flags
+        combinedResult : Result YDecode.Error (List { graph : Graph, roots: List GraphNode })
+        combinedResult = List.foldr (\separateResult acc -> Result.map2 (::) separateResult acc) (Ok []) separateClusterResults
+    in
+        case combinedResult of
+            Ok lst -> (ValidModel lst, Cmd.none) -- may change if I switch to ziplist
+            Err e -> (Debug.log (Debug.toString e) (DecodingError, Cmd.none))
 
 update : Msg -> Model -> ( Model, Cmd msg )
-update msg _ =
+update msg model =
     case msg of
         SelectNode v ->
-            ( "You selected node " ++ String.fromInt v, Cmd.none )
+            ( model, Cmd.none )
 
         SelectEdge ( from, to ) ->
-            ( "You selected edge from " ++ String.fromInt from ++ " to " ++ String.fromInt to, Cmd.none )
+            ( model, Cmd.none )
 
 
 viewGraph : Graph -> List GraphNode -> List (Html.Attribute Msg) -> Html.Html Msg
@@ -137,11 +157,21 @@ viewGraph g roots extraAttributes =
 
 view : Model -> Html.Html Msg
 view model =
-    Html.div
-        []
-        [ viewGraph exampleGraph exampleGraphRoots []
-        , Html.h1 [] [ Html.text model ]
-        ]
+    case model of
+        ValidModel [] ->
+            Html.div
+                []
+                [ Html.text "Need to have at least one cluster. Replace with ziplist later." ]
+
+        -- obviously only shows first graph ATM
+        ValidModel ({ graph, roots } :: clusters) ->
+            Html.div
+                []
+                [viewGraph graph roots []]
+        DecodingError -> 
+            Html.div
+                []
+                [ Html.text "Decoding error occurred!" ]
 
 
 subscriptions : Model -> Sub Msg
@@ -157,3 +187,130 @@ main =
         , update = update
         , subscriptions = subscriptions
         }
+
+clusterDecoder : String -> List GraphNode -> YDecode.Decoder { graph : Graph, roots : List GraphNode }
+clusterDecoder clusterName allGraphNodes =
+    let
+        rootIdsDecoder =
+            YDecode.maybe <| YDecode.field "roots" <| YDecode.list (YDecode.string |> YDecode.map (\id -> { id = id, namespace = clusterName }))
+
+        rootsDecoder =
+            YDecode.andThen
+                (Maybe.withDefault []
+                    >> List.map (\rootId -> List.Extra.find (isSameGraphNode rootId) allGraphNodes)
+                    >> MyList.collect
+                    >> YDecode.fromMaybe "Not all root nodes are correctly specified as graph nodes"
+                )
+                rootIdsDecoder
+
+        allTypeEdgesDecoder =
+            YDecode.field "all_type_edges" (YDecode.list (edgeDecoder clusterName All))
+
+        anyTypeEdgesDecoder =
+            YDecode.maybe <| YDecode.field "any_type_edges" (YDecode.list (edgeDecoder clusterName AtLeastOne))
+
+        graphNodeIdsDecoder =
+            YDecode.map3 (\n1s n2s n3s -> n1s ++ n2s ++ n3s |> List.Extra.unique)
+                (YDecode.map (List.concatMap (\(Edge { start, end } _) -> [ start, end ])) allTypeEdgesDecoder)
+                (YDecode.map (Maybe.withDefault [] >> List.concatMap (\(Edge { start, end } _) -> [ start, end ])) anyTypeEdgesDecoder)
+                (YDecode.map (Maybe.withDefault []) rootIdsDecoder)
+
+        errorMessage graphNodeId =
+            "Could not find matching graph node for graph node ID " ++ Debug.toString graphNodeId ++ " in " ++ Debug.toString allGraphNodes ++ ". This is a programming error."
+
+        allUtilizedGraphNodesDecoder =
+            YDecode.andThen
+                (\graphNodeIds ->
+                    YamlHelp.tryFoldl
+                        (\graphNodeId ->
+                            YamlHelp.tryCons
+                                (List.Extra.find
+                                    (isSameGraphNode graphNodeId)
+                                    allGraphNodes
+                                    |> YDecode.fromMaybe (errorMessage graphNodeId)
+                                )
+                        )
+                        []
+                        graphNodeIds
+                )
+                graphNodeIdsDecoder
+
+        edgesToIndexBasedRepresentation =
+            \edges allUtilizedGraphNodes ->
+                YamlHelp.tryFoldl
+                    (\(Edge { start, end } edgeType) ->
+                        let
+                            wrappedIndex graphNodeId =
+                                List.Extra.findIndex
+                                    (\graphNode -> graphNode.id == graphNodeId.id)
+                                    allUtilizedGraphNodes
+                                    |> YDecode.fromMaybe ("Could not find index for " ++ Debug.toString graphNodeId)
+                        in
+                        YamlHelp.tryCons
+                            (YDecode.map2
+                                (\startIndex endIndex -> { from = startIndex, to = endIndex, label = edgeType })
+                                (wrappedIndex start)
+                                (wrappedIndex end)
+                            )
+                    )
+                    []
+                    edges
+
+        allTypeIndexifiedEdgesDecoder =
+            YamlHelp.andThen2
+                edgesToIndexBasedRepresentation
+                allTypeEdgesDecoder
+                allUtilizedGraphNodesDecoder
+
+        anyTypeIndexifiedEdgesDecoder =
+            YamlHelp.andThen2
+                edgesToIndexBasedRepresentation
+                (YDecode.map (Maybe.withDefault []) anyTypeEdgesDecoder)
+                allUtilizedGraphNodesDecoder
+    in
+    YDecode.map4
+        (\graphNodes allTypeEdges anyTypeEdges roots ->
+            { graph =
+                G.fromNodesAndEdges
+                    (List.indexedMap (\index contents -> { id = index, label = contents }) graphNodes)
+                    (allTypeEdges ++ anyTypeEdges)
+            , roots = roots
+            }
+        )
+        allUtilizedGraphNodesDecoder
+        allTypeIndexifiedEdgesDecoder
+        anyTypeIndexifiedEdgesDecoder
+        rootsDecoder
+
+
+edgeDecoder : String -> EdgeType -> YDecode.Decoder Edge
+edgeDecoder clusterName edgeType =
+    let
+        idToGraphNodeId id =
+            let
+                postfix =
+                    String.Extra.rightOf "__" id
+
+                prefix =
+                    String.Extra.leftOf "__" id
+            in
+            { id =
+                if String.isEmpty postfix then
+                    id
+
+                else
+                    postfix
+            , namespace =
+                if String.isEmpty prefix then
+                    clusterName
+
+                else
+                    prefix
+            }
+    in
+    YDecode.map2
+        (\start end -> Edge { start = start, end = end } edgeType)
+        (YDecode.field "start_id" YDecode.string |> YDecode.map idToGraphNodeId)
+        (YDecode.field "end_id" YDecode.string |> YDecode.map idToGraphNodeId)
+
+
