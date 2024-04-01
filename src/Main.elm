@@ -1,6 +1,5 @@
 module Main exposing (main)
 
-
 import Browser
 import Dagre.Attributes as DA
 import Graph as G
@@ -13,6 +12,12 @@ import Render.StandardDrawers.Types as RSDT
 
 type alias Model =
     String
+
+
+
+-- TODO: will need to deserialize supplied graphs instead
+-- can use flags for those
+-- and deserializing should return a Result ZipList Graph
 
 
 simpleGraph : G.Graph Int ()
@@ -42,19 +47,20 @@ type Msg
     | SelectNode Int
 
 
-init : Model
-init =
-    "No element selected!!, click on an edge/node to select it"
+init : List { cluster : String, yaml : String } -> ( Model, Cmd msg )
+init flags =
+    Debug.log (Debug.toString flags)
+        ( "No element selected!!, click on an edge/node to select it", Cmd.none )
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd msg )
 update msg _ =
     case msg of
         SelectNode v ->
-            "You selected node " ++ String.fromInt v
+            ( "You selected node " ++ String.fromInt v, Cmd.none )
 
         SelectEdge ( from, to ) ->
-            "You selected edge from " ++ String.fromInt from ++ " to " ++ String.fromInt to
+            ( "You selected edge from " ++ String.fromInt from ++ " to " ++ String.fromInt to, Cmd.none )
 
 
 viewGraph : G.Graph n e -> Html.Html Msg
@@ -89,10 +95,16 @@ view model =
         ]
 
 
-main : Program () Model Msg
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+    Sub.none
+
+
+main : Program (List { cluster : String, yaml : String }) Model Msg
 main =
-    Browser.sandbox
+    Browser.element
         { init = init
         , view = view
         , update = update
+        , subscriptions = subscriptions
         }
