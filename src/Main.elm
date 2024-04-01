@@ -1,50 +1,73 @@
 module Main exposing (main)
 
 import Browser
+import Color
 import Dagre.Attributes as DA
+import Dict
 import Graph as G
 import Html
+import MyDagre
 import Render as R
 import Render.StandardDrawers as RSD
 import Render.StandardDrawers.Attributes as RSDA
 import Render.StandardDrawers.Types as RSDT
+import TypedSvg as TS
+import TypedSvg.Attributes as TSA
 
 
 type alias Model =
     String
 
 
-
--- TODO: will need to deserialize supplied graphs instead
--- can use flags for those
--- and deserializing should return a Result ZipList Graph
+type alias Graph =
+    G.Graph GraphNode EdgeType
 
 
-simpleGraph : G.Graph Int ()
-simpleGraph =
-    G.fromNodeLabelsAndEdgePairs
-        [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]
-        [ ( 0, 1 )
-        , ( 0, 2 )
-        , ( 1, 3 )
-        , ( 1, 4 )
-        , ( 2, 5 )
-        , ( 2, 6 )
-        , ( 3, 7 )
-        , ( 3, 8 )
-        , ( 0, 7 )
-        , ( 0, 5 )
-        , ( 4, 0 )
-        , ( 6, 0 )
-        , ( 4, 8 )
-        , ( 6, 8 )
-        , ( 7, 8 )
-        ]
+type alias GraphNode =
+    { id : String, namespace : String, title : String }
+
+
+type EdgeType
+    = All
+    | AtLeastOne
+
+
+
+-- TODO: replace with deserialized (from YAML) graph if this works
+exampleGraph : Graph
+exampleGraph =
+    let
+        nodes =
+            [ G.Node 1 { id = "node1", namespace = "cluster1", title = "Node 1" }
+            , G.Node 2 { id = "node2", namespace = "cluster2", title = "Node 2" }
+            , G.Node 3 { id = "node3", namespace = "cluster3", title = "Node 3" }
+            ]
+
+        edges =
+            [ G.Edge 1 2 All
+            , G.Edge 2 3 All
+            ]
+    in
+    G.fromNodesAndEdges nodes edges
+
+
+exampleGraphRoots : List GraphNode
+exampleGraphRoots =
+    [ { id = "node1", namespace = "cluster1", title = "Node 1" } ]
 
 
 type Msg
     = SelectEdge ( Int, Int )
     | SelectNode Int
+
+
+isSameGraphNode : { a | id : String, namespace : String } -> { b | id : String, namespace : String } -> Bool
+isSameGraphNode graphNodeId graphNode =
+    graphNode.id == graphNodeId.id && graphNode.namespace == graphNodeId.namespace
+
+
+
+-- TODO: change to Json.Decode.Value and decode manually for more control later
 
 
 init : List { cluster : String, yaml : String } -> ( Model, Cmd msg )
@@ -63,34 +86,60 @@ update msg _ =
             ( "You selected edge from " ++ String.fromInt from ++ " to " ++ String.fromInt to, Cmd.none )
 
 
-viewGraph : G.Graph n e -> Html.Html Msg
-viewGraph g =
-    R.draw
+viewGraph : Graph -> List GraphNode -> List (Html.Attribute Msg) -> Html.Html Msg
+viewGraph g roots extraAttributes =
+    let
+        widthDict =
+            Dict.fromList <| List.map (\node -> ( node.id, String.length node.label.title |> toFloat >> (*) 10 )) (G.nodes g)
+    in
+    MyDagre.draw
         [ DA.rankDir DA.LR
+        , DA.widthDict widthDict
         ]
-        -- []
         [ R.nodeDrawer
-            (RSD.svgDrawNode
-                [ RSDA.onClick (\n -> SelectNode n.id)
+            (MyDagre.svgDrawNode
+                [ RSDA.label (\node -> node.label.title)
+                , RSDA.title (\node -> node.label.id) -- may want to prefix with namespace
+                , RSDA.shape (\_ -> RSDT.RoundedBox 5)
+                , RSDA.fill
+                    (\node ->
+                        if List.any (isSameGraphNode node.label) roots then
+                            Color.lightGreen
+
+                        else
+                            Color.lightBlue
+                    )
+                , MyDagre.wrapper (\node children -> TS.a [ TSA.href <| "/clusters/" ++ node.label.namespace ++ "/" ++ node.label.id ] children)
                 ]
             )
         , R.edgeDrawer
             (RSD.svgDrawEdge
                 [ RSDA.arrowHead RSDT.Vee
-                , RSDA.onClick (\e -> SelectEdge ( e.from, e.to ))
                 , RSDA.strokeWidth (\_ -> 4)
+
+                -- https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/stroke-dasharray
+                , RSDA.strokeDashArray
+                    (\info ->
+                        case info.label of
+                            AtLeastOne ->
+                                "1"
+
+                            All ->
+                                "0"
+                    )
                 ]
             )
-        , R.style "height: 80vh;"
+        , R.style "max-height: 100vh"
         ]
         g
+        extraAttributes
 
 
 view : Model -> Html.Html Msg
 view model =
     Html.div
         []
-        [ viewGraph simpleGraph
+        [ viewGraph exampleGraph exampleGraphRoots []
         , Html.h1 [] [ Html.text model ]
         ]
 
