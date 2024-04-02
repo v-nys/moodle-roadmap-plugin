@@ -90,26 +90,26 @@ class block_roadmap extends block_base
         );
         $prerequisites = array_map(function ($node) use ($prerequisite_records, $namespaced_nodes) {
             $dependency_block = new stdClass();
+            $dependency_block->slug = $node->slug;
+            $dependency_block->cluster = $node->cluster_name;
             $any_records = array_filter($prerequisite_records, function ($record) use ($node) {
                 return $record->dependent == $node->id && $record->edge_type == 'any';
             });
             $all_records = array_filter($prerequisite_records, function ($record) use ($node) {
                 return $record->dependent == $node->id && $record->edge_type == 'all';
             });
-
-            $dependency_block->any = array_map(function ($any_record) use ($namespaced_nodes) {
+            $dependency_block->any = array_values(array_map(function ($any_record) use ($namespaced_nodes) {
                 $matching_nodes = array_filter($namespaced_nodes, function ($node) use ($any_record) {
                     return $any_record->dependency == $node->id;
                 });
                 return array_values($matching_nodes)[0];
-            }, $any_records);
-
-            $dependency_block->all = array_map(function ($all_record) use ($namespaced_nodes) {
+            }, $any_records));
+            $dependency_block->all = array_values(array_map(function ($all_record) use ($namespaced_nodes) {
                 $matching_nodes = array_filter($namespaced_nodes, function ($node) use ($all_record) {
                     return $all_record->dependency == $node->id;
                 });
                 return array_values($matching_nodes)[0];
-            }, $all_records);
+            }, $all_records));
             return $dependency_block;
         }, $namespaced_nodes);
         $PAGE->requires->js_call_amd(
@@ -117,8 +117,8 @@ class block_roadmap extends block_base
             'jsInit',
             [
                 $serializations,
-                $completed_nodes,
-                $prerequisites
+                array_values($completed_nodes),
+                array_values($prerequisites),
             ]
         );
         $this->content = new stdClass();
