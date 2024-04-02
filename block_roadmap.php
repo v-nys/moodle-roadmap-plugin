@@ -65,21 +65,21 @@ class block_roadmap extends block_base
             return $section->id;
         }, $sections);
         $course_nodes = $DB->get_records_list('nodes', 'course_sections_id', $section_ids);
-        // next: add namespace (already have $serializations)
         $namespaced_nodes = array_map(function ($node) use ($serializations) {
-            $cluster = array_filter($serializations, function ($cluster) use ($node) {
-                return $cluster->id === $node->clusters_id;
-            })[0];
+            $matching_clusters = array_filter($serializations, function ($cluster) use ($node) {
+                return $cluster->id == $node->clusters_id;
+            });
+            $cluster = array_values($matching_clusters)[0];
             $node_copy = clone $node;
             $node_copy->cluster_name = $cluster->name;
             return $node_copy;
         }, $course_nodes);
         $user_completions = $DB->get_records('course_modules_completion', array('userid' => $USER->id, 'completionstate' => 1));
-        $completed_nodes = array_map(function ($node) use ($user_completions) {
+        $completed_nodes = array_filter($namespaced_nodes, function ($node) use ($user_completions) {
             return in_array($node->manual_completion_assignment_id, array_map(function ($completion) {
                 return $completion->coursemoduleid;
             }, $user_completions));
-        }, $namespaced_nodes);
+        });
         $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', [$serializations, $completed_nodes]);
         $this->content = new stdClass();
         $this->content->items = array();
