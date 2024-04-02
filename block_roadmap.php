@@ -96,14 +96,16 @@ class block_roadmap extends block_base
             $all_records = array_filter($prerequisite_records, function ($record) use ($node) {
                 return $record->dependent == $node->id && $record->edge_type == 'all';
             });
+
             $dependency_block->any = array_map(function ($any_record) use ($namespaced_nodes) {
-                $matching_nodes = array_filter($namespaced_nodes, function ($any_record, $node) {
+                $matching_nodes = array_filter($namespaced_nodes, function ($node) use ($any_record) {
                     return $any_record->dependency == $node->id;
                 });
                 return array_values($matching_nodes)[0];
             }, $any_records);
+
             $dependency_block->all = array_map(function ($all_record) use ($namespaced_nodes) {
-                $matching_nodes = array_filter($namespaced_nodes, function ($all_record, $node) {
+                $matching_nodes = array_filter($namespaced_nodes, function ($node) use ($all_record) {
                     return $all_record->dependency == $node->id;
                 });
                 return array_values($matching_nodes)[0];

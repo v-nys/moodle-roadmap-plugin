@@ -7,6 +7,8 @@ export const jsInit = (serializations, completed_nodes, dependencies) => {
     const node = document.getElementById('roadmap');
     if (node) {
         console.debug(serializations);
-        Elm.Main.init({ node, flags: Object.values(serializations).map(({name, yaml}) => { return { cluster: name, yaml } }) });
+        Elm.Main.init({
+            node,
+            flags: Object.values(serializations).map(({name, yaml}) => { return { cluster: name, yaml } }) });
     }
 };
