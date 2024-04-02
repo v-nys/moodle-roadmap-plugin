@@ -9,6 +9,11 @@ export const jsInit = (serializations, completed_nodes, dependencies) => {
         console.debug(serializations);
         Elm.Main.init({
             node,
-            flags: Object.values(serializations).map(({name, yaml}) => { return { cluster: name, yaml } }) });
+            flags: {
+                clusters: Object.values(serializations).map(({name, yaml}) => { return { cluster: name, yaml } }),
+                completed: Object.values(completed_nodes),
+                dependencies: Object.values(dependencies)
+            }
+        });
     }
 };

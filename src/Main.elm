@@ -1,5 +1,6 @@
 module Main exposing (main)
 
+import Json.Decode
 import Browser
 import Color
 import Dagre.Attributes as DA
@@ -72,8 +73,8 @@ isSameGraphNode graphNodeId graphNode =
 -- TODO: change flags to Json.Decode.Value and decode manually for more control later
 
 
-init : List { cluster : String, yaml : String } -> ( Model, Cmd msg )
-init flags =
+init : { clusters: List { cluster : String, yaml : String }, completed: Json.Decode.Value, dependencies: Json.Decode.Value } -> ( Model, Cmd msg )
+init { clusters, completed, dependencies } =
     let
         nodeListDecoder : String -> YDecode.Decoder (List GraphNode)
         nodeListDecoder clusterName =
@@ -85,7 +86,7 @@ init flags =
                         (YDecode.field "title" YDecode.string)
 
         clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
-        clusterGraphNodesResults = List.map (\{cluster, yaml} -> YDecode.fromString (nodeListDecoder cluster) yaml) flags
+        clusterGraphNodesResults = List.map (\{cluster, yaml} -> YDecode.fromString (nodeListDecoder cluster) yaml) clusters
 
         allGraphNodesResult : Result YDecode.Error (List GraphNode)
         allGraphNodesResult = List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
@@ -97,7 +98,7 @@ init flags =
             Result.andThen
             (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
             allGraphNodesResult)
-          flags
+          clusters
 
         combinedResult : Result YDecode.Error (List { name: String, graph : Graph, roots: List GraphNode })
         combinedResult = List.foldr (\separateResult acc -> Result.map2 (::) separateResult acc) (Ok []) separateClusterResults
@@ -202,7 +203,7 @@ subscriptions _ =
     Sub.none
 
 
-main : Program (List { cluster : String, yaml : String }) Model Msg
+main : Program { clusters : (List { cluster : String, yaml : String }), completed: Json.Decode.Value, dependencies: Json.Decode.Value  } Model Msg
 main =
     Browser.element
         { init = init
