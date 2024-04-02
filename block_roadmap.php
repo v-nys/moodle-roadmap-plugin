@@ -80,7 +80,45 @@ class block_roadmap extends block_base
                 return $completion->coursemoduleid;
             }, $user_completions));
         });
-        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', [$serializations, $completed_nodes]);
+        $course_node_ids = array_map(function ($node) {
+            return $node->id;
+        }, $course_nodes);
+        $prerequisite_records = $DB->get_records_list(
+            'node_prerequisites',
+            'dependent',
+            $course_node_ids
+        );
+        $prerequisites = array_map(function ($node) use ($prerequisite_records, $namespaced_nodes) {
+            $dependency_block = new stdClass();
+            $any_records = array_filter($prerequisite_records, function ($record) use ($node) {
+                return $record->dependent == $node->id && $record->edge_type == 'any';
+            });
+            $all_records = array_filter($prerequisite_records, function ($record) use ($node) {
+                return $record->dependent == $node->id && $record->edge_type == 'all';
+            });
+            $dependency_block->any = array_map(function ($any_record) use ($namespaced_nodes) {
+                $matching_nodes = array_filter($namespaced_nodes, function ($any_record, $node) {
+                    return $any_record->dependency == $node->id;
+                });
+                return array_values($matching_nodes)[0];
+            }, $any_records);
+            $dependency_block->all = array_map(function ($all_record) use ($namespaced_nodes) {
+                $matching_nodes = array_filter($namespaced_nodes, function ($all_record, $node) {
+                    return $all_record->dependency == $node->id;
+                });
+                return array_values($matching_nodes)[0];
+            }, $all_records);
+            return $dependency_block;
+        }, $namespaced_nodes);
+        $PAGE->requires->js_call_amd(
+            'block_roadmap/roadmap',
+            'jsInit',
+            [
+                $serializations,
+                $completed_nodes,
+                $prerequisites
+            ]
+        );
         $this->content = new stdClass();
         $this->content->items = array();
         $this->content->icons = array();
