@@ -22,24 +22,27 @@
  * @license     https://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 
- // may need some of these...
+// may need some of these...
 // require_once('../../config.php');
 // require_once($CFG->dirroot . '/course/modlib.php');
 // defined('MOODLE_INTERNAL') || die();
 // require_once($CFG->dirroot . '/course/lib.php');
 
-class block_roadmap extends block_base {
+class block_roadmap extends block_base
+{
 
     /**
      * Initializes class member variables.
      */
-    public function init() {
+    public function init()
+    {
         // Needed by Moodle to differentiate between blocks.
         $this->title = get_string('pluginname', 'block_roadmap');
     }
 
     /** Where to show the block. */
-    public function default_region() {
+    public function default_region()
+    {
         return 'jumbotron';
     }
 
@@ -48,12 +51,36 @@ class block_roadmap extends block_base {
      *
      * @return stdClass The block contents.
      */
-    public function get_content() {
+    public function get_content()
+    {
         global $PAGE;
         global $DB;
         global $COURSE;
+        global $USER;
+
         $serializations = $DB->get_records('clusters', array("courseid" => $COURSE->id));
-        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', [$serializations]);
+        // having trouble with JOIN via DB API, so taking the long route
+        $sections = $DB->get_records('course_sections', array("course" => $COURSE->id));
+        $section_ids = array_map(function ($section) {
+            return $section->id;
+        }, $sections);
+        $course_nodes = $DB->get_records_list('nodes', 'course_sections_id', $section_ids);
+        // next: add namespace (already have $serializations)
+        $namespaced_nodes = array_map(function ($node) use ($serializations) {
+            $cluster = array_filter($serializations, function ($cluster) use ($node) {
+                return $cluster->id === $node->clusters_id;
+            })[0];
+            $node_copy = clone $node;
+            $node_copy->cluster_name = $cluster->name;
+            return $node_copy;
+        }, $course_nodes);
+        $user_completions = $DB->get_records('course_modules_completion', array('userid' => $USER->id, 'completionstate' => 1));
+        $completed_nodes = array_map(function ($node) use ($user_completions) {
+            return in_array($node->manual_completion_assignment_id, array_map(function ($completion) {
+                return $completion->coursemoduleid;
+            }, $user_completions));
+        }, $namespaced_nodes);
+        $PAGE->requires->js_call_amd('block_roadmap/roadmap', 'jsInit', [$serializations, $completed_nodes]);
         $this->content = new stdClass();
         $this->content->items = array();
         $this->content->icons = array();
@@ -68,7 +95,8 @@ class block_roadmap extends block_base {
      *
      * The function is called immediately after init().
      */
-    public function specialization() {
+    public function specialization()
+    {
 
         // Load user defined title and make sure it's never empty.
         if (empty($this->config->title)) {
@@ -83,7 +111,8 @@ class block_roadmap extends block_base {
      *
      * @return string[] Array of pages and permissions.
      */
-    public function applicable_formats() {
+    public function applicable_formats()
+    {
         return array(
             'all' => false,
             'course-view' => true,
