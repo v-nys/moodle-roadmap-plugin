@@ -1,6 +1,5 @@
 module Main exposing (main)
 
-import Json.Decode
 import Browser
 import Color
 import Dagre.Attributes as DA
@@ -8,42 +7,53 @@ import Dict
 import Graph as G
 import Html
 import Html.Events
+import Json.Decode
+import Json.Decode.Pipeline exposing (required)
+import List.Extra
+import List.Nonempty exposing (ListNonempty)
 import MyDagre
 import MyList
 import Render as R
 import Render.StandardDrawers as RSD
 import Render.StandardDrawers.Attributes as RSDA
 import Render.StandardDrawers.Types as RSDT
+import String.Extra
 import TypedSvg as TS
 import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
-import List.Extra
 import YamlHelp
-import String.Extra
-import List.Nonempty exposing (ListNonempty)
-import Json.Decode.Pipeline exposing (required)
+
 
 type Model
     = DecodingError
-    | ValidModel { clusters : ListNonempty { name: String, graph : Graph, roots: List GraphNode }, completed: List GraphNodeId, dependencies: List Dependency }
+    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency }
 
 
 rotateLeft : ListNonempty a -> Int -> ListNonempty a
 rotateLeft z n =
-    if n == 0
-    then z
-    else case z of
-        (h, []) -> z
-        (h1, (h2::t)) -> (h2, (t ++ [h1]))
+    if n == 0 then
+        z
+
+    else
+        case z of
+            ( h, [] ) ->
+                z
+
+            ( h1, h2 :: t ) ->
+                ( h2, t ++ [ h1 ] )
 
 
-type alias Dependency = { slug: String, cluster: String, any: List GraphNodeId, all: List GraphNodeId }
+type alias Dependency =
+    { slug : String, cluster : String, any : List GraphNodeId, all : List GraphNodeId }
+
 
 type alias Graph =
     G.Graph GraphNode EdgeType
 
+
 type alias GraphNode =
     { id : String, namespace : String, title : String }
+
 
 type alias GraphNodeId =
     { id : String, namespace : String }
@@ -52,6 +62,7 @@ type alias GraphNodeId =
 type EdgeType
     = All
     | AtLeastOne
+
 
 type Edge
     = Edge { start : GraphNodeId, end : GraphNodeId } EdgeType
@@ -67,50 +78,70 @@ isSameGraphNode : { a | id : String, namespace : String } -> { b | id : String, 
 isSameGraphNode graphNodeId graphNode =
     graphNode.id == graphNodeId.id && graphNode.namespace == graphNodeId.namespace
 
+
 init : Json.Decode.Value -> ( Model, Cmd msg )
 init json =
     let
-        flags = Json.Decode.decodeValue flagsDecoder json
+        flags =
+            Json.Decode.decodeValue flagsDecoder json
     in
-        case flags of
-            Ok { clusters, completed, dependencies } ->
-                let
-                    nodeListDecoder : String -> YDecode.Decoder (List GraphNode)
-                    nodeListDecoder clusterName =
-                        YDecode.field "nodes" <|
-                            YDecode.list <|
-                                YDecode.map3 GraphNode
-                                    (YDecode.field "id" YDecode.string)
-                                    (YDecode.succeed clusterName)
-                                    (YDecode.field "title" YDecode.string)
-            
-                    clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
-                    clusterGraphNodesResults = List.map (\{cluster, yaml} -> YDecode.fromString (nodeListDecoder cluster) yaml) clusters
-            
-                    allGraphNodesResult : Result YDecode.Error (List GraphNode)
-                    allGraphNodesResult = List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
-            
-                    separateClusterResults : List (Result YDecode.Error { name: String, graph : Graph, roots: List GraphNode })
-                    separateClusterResults =
-                      List.map
-                      (\{cluster, yaml} ->
-                        Result.andThen
-                        (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
-                        allGraphNodesResult)
-                      clusters
-            
-                    combinedResult : Result YDecode.Error (List { name: String, graph : Graph, roots: List GraphNode })
-                    combinedResult = List.foldr (\separateResult acc -> Result.map2 (::) separateResult acc) (Ok []) separateClusterResults
-            
-                    modelDataResult = case combinedResult of
-                        Ok (head::tail) -> Ok <| List.Nonempty.fromPair head tail
-                        Ok [] -> Err <| YDecode.Parsing "List of clusters cannot be empty."
-                        Err e -> Err e
-                in
-                    case modelDataResult of
-                        Ok lst -> (ValidModel { clusters = lst , completed = completed, dependencies = dependencies }, Cmd.none)
-                        Err e -> (DecodingError, Cmd.none)
-            Err e -> (DecodingError, Cmd.none)
+    case flags of
+        Ok { clusters, completed, dependencies } ->
+            let
+                nodeListDecoder : String -> YDecode.Decoder (List GraphNode)
+                nodeListDecoder clusterName =
+                    YDecode.field "nodes" <|
+                        YDecode.list <|
+                            YDecode.map3 GraphNode
+                                (YDecode.field "id" YDecode.string)
+                                (YDecode.succeed clusterName)
+                                (YDecode.field "title" YDecode.string)
+
+                clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
+                clusterGraphNodesResults =
+                    List.map (\{ cluster, yaml } -> YDecode.fromString (nodeListDecoder cluster) yaml) clusters
+
+                allGraphNodesResult : Result YDecode.Error (List GraphNode)
+                allGraphNodesResult =
+                    List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
+
+                separateClusterResults : List (Result YDecode.Error { name : String, graph : Graph, roots : List GraphNode })
+                separateClusterResults =
+                    List.map
+                        (\{ cluster, yaml } ->
+                            Result.andThen
+                                (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
+                                allGraphNodesResult
+                        )
+                        clusters
+
+                combinedResult : Result YDecode.Error (List { name : String, graph : Graph, roots : List GraphNode })
+                combinedResult =
+                    List.foldr (\separateResult acc -> Result.map2 (::) separateResult acc) (Ok []) separateClusterResults
+
+                modelDataResult =
+                    case combinedResult of
+                        Ok (head :: tail) ->
+                            Ok <| List.Nonempty.fromPair head tail
+
+                        Ok [] ->
+                            Err <| YDecode.Parsing "List of clusters cannot be empty."
+
+                        Err e ->
+                            Err e
+            in
+            case modelDataResult of
+                Ok lst ->
+                    ( ValidModel { clusters = lst, completed = completed, dependencies = dependencies }, Cmd.none )
+
+                Err e ->
+                    ( DecodingError
+                    , Cmd.none
+                    )
+
+        Err e ->
+            ( DecodingError, Cmd.none )
+
 
 update : Msg -> Model -> ( Model, Cmd msg )
 update msg model =
@@ -123,8 +154,11 @@ update msg model =
 
         RotateLeft n ->
             case model of
-                ValidModel { clusters, completed, dependencies } -> ( ValidModel { clusters = (rotateLeft clusters n), completed = completed, dependencies = dependencies }, Cmd.none )
-                DecodingError -> ( model, Cmd.none )
+                ValidModel { clusters, completed, dependencies } ->
+                    ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies }, Cmd.none )
+
+                DecodingError ->
+                    ( model, Cmd.none )
 
 
 viewGraph : Graph -> List GraphNode -> List GraphNodeId -> List Dependency -> List (Html.Attribute Msg) -> Html.Html Msg
@@ -145,24 +179,31 @@ viewGraph g roots completed dependencies extraAttributes =
                 , RSDA.fill
                     (\node ->
                         let
-                            dependency = Debug.log "Dependency:" (List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies)
-                            dependenciesMet = case dependency of
-                                Just { all, any } ->
-                                  List.all (\predecessor -> (List.any (isSameGraphNode predecessor) completed)) all &&
-                                  List.any (\predecessor -> (List.any (isSameGraphNode predecessor) completed)) any
-                                Nothing -> False
-                            unlocked = List.any (isSameGraphNode node.label) roots || dependenciesMet
+                            dependency =
+                                Debug.log "Dependency:" (List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies)
+
+                            dependenciesMet =
+                                case dependency of
+                                    Just { all, any } ->
+                                        List.all (\predecessor -> List.any (isSameGraphNode predecessor) completed) all
+                                            && List.any (\predecessor -> List.any (isSameGraphNode predecessor) completed) any
+
+                                    Nothing ->
+                                        False
+
+                            unlocked =
+                                List.any (isSameGraphNode node.label) roots || dependenciesMet
                         in
-                            if List.any (isSameGraphNode node.label) completed then
-                                Color.lightGreen
-    
-                            else if unlocked then
-                                Color.white
-    
-                            else
-                                Color.darkGray
+                        if List.any (isSameGraphNode node.label) completed then
+                            Color.lightGreen
+
+                        else if unlocked then
+                            Color.white
+
+                        else
+                            Color.darkGray
                     )
-                , MyDagre.wrapper (\node children -> TS.a [ TSA.href <| "/clusters/" ++ node.label.namespace ++ "/" ++ node.label.id ] children)
+                , MyDagre.wrapper (\node children -> TS.a [] children)
                 ]
             )
         , R.edgeDrawer
@@ -191,21 +232,25 @@ viewGraph g roots completed dependencies extraAttributes =
 view : Model -> Html.Html Msg
 view model =
     case model of
-        ValidModel ({ clusters, completed, dependencies }) ->
+        ValidModel { clusters, completed, dependencies } ->
             let
-                ({ name, graph, roots },_) = clusters
-                buttonList =
-                  List.Nonempty.indexedMap
-                    (\idx elem -> { cluster = elem.name, button = Html.button [Html.Events.onClick (RotateLeft idx)] [Html.text elem.name] })
+                ( { name, graph, roots }, _ ) =
                     clusters
+
+                buttonList =
+                    List.Nonempty.indexedMap
+                        (\idx elem -> { cluster = elem.name, button = Html.button [ Html.Events.onClick (RotateLeft idx) ] [ Html.text elem.name ] })
+                        clusters
             in
-                Html.div
+            Html.div
+                []
+                [ Html.div
                     []
-                    [ Html.div
-                      []
-                      (buttonList |> List.Nonempty.toList |> List.sortBy .cluster |> List.map .button)
-                    , Html.div [] [viewGraph graph roots completed dependencies []]]
-        DecodingError -> 
+                    (buttonList |> List.Nonempty.toList |> List.sortBy .cluster |> List.map .button)
+                , Html.div [] [ viewGraph graph roots completed dependencies [] ]
+                ]
+
+        DecodingError ->
             Html.div
                 []
                 [ Html.text "Decoding error occurred!" ]
@@ -215,31 +260,45 @@ subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
+
 completedNodeDecoder : Json.Decode.Decoder GraphNodeId
-completedNodeDecoder = Json.Decode.succeed GraphNodeId
-  |> required "slug" Json.Decode.string
-  |> required "cluster_name" Json.Decode.string
+completedNodeDecoder =
+    Json.Decode.succeed GraphNodeId
+        |> required "slug" Json.Decode.string
+        |> required "cluster_name" Json.Decode.string
 
-dependencyDecoder : Json.Decode.Decoder Dependency 
-dependencyDecoder = Json.Decode.succeed Dependency
-  |> required "slug" Json.Decode.string
-  |> required "cluster" Json.Decode.string
-  |> required "any" (Json.Decode.list completedNodeDecoder)
-  |> required "all" (Json.Decode.list completedNodeDecoder)
 
-type alias NamedYaml = { cluster : String, yaml : String }
+dependencyDecoder : Json.Decode.Decoder Dependency
+dependencyDecoder =
+    Json.Decode.succeed Dependency
+        |> required "slug" Json.Decode.string
+        |> required "cluster" Json.Decode.string
+        |> required "any" (Json.Decode.list completedNodeDecoder)
+        |> required "all" (Json.Decode.list completedNodeDecoder)
+
+
+type alias NamedYaml =
+    { cluster : String, yaml : String }
+
+
 clusterWithYamlDecoder : Json.Decode.Decoder NamedYaml
-clusterWithYamlDecoder = Json.Decode.succeed NamedYaml
-  |> required "cluster" Json.Decode.string
-  |> required "yaml" Json.Decode.string
+clusterWithYamlDecoder =
+    Json.Decode.succeed NamedYaml
+        |> required "cluster" Json.Decode.string
+        |> required "yaml" Json.Decode.string
 
-type alias Flags = { clusters : List NamedYaml, completed: List GraphNodeId, dependencies: List Dependency }
+
+type alias Flags =
+    { clusters : List NamedYaml, completed : List GraphNodeId, dependencies : List Dependency }
+
 
 flagsDecoder : Json.Decode.Decoder Flags
-flagsDecoder = Json.Decode.succeed Flags
-  |> required "clusters" (Json.Decode.list clusterWithYamlDecoder)
-  |> required "completed" (Json.Decode.list completedNodeDecoder)
-  |> required "dependencies" (Json.Decode.list dependencyDecoder)
+flagsDecoder =
+    Json.Decode.succeed Flags
+        |> required "clusters" (Json.Decode.list clusterWithYamlDecoder)
+        |> required "completed" (Json.Decode.list completedNodeDecoder)
+        |> required "dependencies" (Json.Decode.list dependencyDecoder)
+
 
 main : Program Json.Decode.Value Model Msg
 main =
@@ -250,7 +309,8 @@ main =
         , subscriptions = subscriptions
         }
 
-clusterDecoder : String -> List GraphNode -> YDecode.Decoder { name: String, graph : Graph, roots : List GraphNode }
+
+clusterDecoder : String -> List GraphNode -> YDecode.Decoder { name : String, graph : Graph, roots : List GraphNode }
 clusterDecoder clusterName allGraphNodes =
     let
         rootIdsDecoder =
@@ -332,9 +392,8 @@ clusterDecoder clusterName allGraphNodes =
     in
     YDecode.map4
         (\graphNodes allTypeEdges anyTypeEdges roots ->
-            {
-              name = clusterName,
-              graph =
+            { name = clusterName
+            , graph =
                 G.fromNodesAndEdges
                     (List.indexedMap (\index contents -> { id = index, label = contents }) graphNodes)
                     (allTypeEdges ++ anyTypeEdges)
@@ -376,5 +435,3 @@ edgeDecoder clusterName edgeType =
         (\start end -> Edge { start = start, end = end } edgeType)
         (YDecode.field "start_id" YDecode.string |> YDecode.map idToGraphNodeId)
         (YDecode.field "end_id" YDecode.string |> YDecode.map idToGraphNodeId)
-
-
