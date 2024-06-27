@@ -8,7 +8,7 @@ import Dagre.Attributes as DA
 import Dict
 import Graph as G
 import Html
-import Html.Attributes
+import Html.Attributes exposing (style)
 import Html.Events
 import Json.Decode
 import Json.Decode.Pipeline exposing (required)
@@ -27,7 +27,6 @@ import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
 import YamlHelp
 import Zoom exposing (OnZoom(..), Zoom)
-import Html.Attributes exposing (style)
 
 
 type Model
@@ -92,7 +91,7 @@ isSameGraphNode graphNodeId graphNode =
     graphNode.id == graphNodeId.id && graphNode.namespace == graphNodeId.namespace
 
 
-init : Json.Decode.Value -> ( Model, Cmd msg )
+init : Json.Decode.Value -> ( Model, Cmd Msg )
 init json =
     let
         flags =
@@ -144,8 +143,9 @@ init json =
                             Err e
             in
             case modelDataResult of
+
                 Ok lst ->
-                    ( Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Cmd.none )
+                    (Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing"))
 
                 Err e ->
                     ( DecodingError
