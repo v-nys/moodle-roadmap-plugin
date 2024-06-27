@@ -231,7 +231,7 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
-                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#section-" ++ node.label.course_module_id ] children)
+                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#section" ++ (Debug.log "node:" (Debug.toString node)) ] children)
                 ]
             )
         , R.edgeDrawer
