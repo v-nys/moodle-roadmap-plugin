@@ -22,11 +22,12 @@ import TypedSvg as TS
 import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
 import YamlHelp
+import Zoom exposing (OnZoom, Zoom)
 
 
 type Model
     = DecodingError
-    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency }
+    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom: Maybe Zoom }
 
 
 rotateLeft : ListNonempty a -> Int -> ListNonempty a
@@ -72,6 +73,7 @@ type Msg
     = SelectEdge ( Int, Int )
     | SelectNode Int
     | RotateLeft Int
+    | ZoomMsg OnZoom
 
 
 isSameGraphNode : { a | id : String, namespace : String } -> { b | id : String, namespace : String } -> Bool
@@ -132,7 +134,7 @@ init json =
             in
             case modelDataResult of
                 Ok lst ->
-                    ( ValidModel { clusters = lst, completed = completed, dependencies = dependencies }, Cmd.none )
+                    ( ValidModel { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Cmd.none )
 
                 Err e ->
                     ( DecodingError
@@ -154,12 +156,13 @@ update msg model =
 
         RotateLeft n ->
             case model of
-                ValidModel { clusters, completed, dependencies } ->
-                    ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies }, Cmd.none )
+                ValidModel { clusters, completed, dependencies, zoom } ->
+                    ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies, zoom = zoom }, Cmd.none )
 
                 DecodingError ->
                     ( model, Cmd.none )
 
+        ZoomMsg _ -> ( model, Cmd.none)
 
 viewGraph : Graph -> List GraphNode -> List GraphNodeId -> List Dependency -> List (Html.Attribute Msg) -> Html.Html Msg
 viewGraph g roots completed dependencies extraAttributes =
@@ -257,9 +260,13 @@ view model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Sub.none
-
+subscriptions model =
+    case model of
+        DecodingError -> Sub.none
+        ValidModel { zoom } ->
+          case zoom of
+            Nothing -> Sub.none
+            Just actualZoom -> Zoom.subscriptions actualZoom ZoomMsg
 
 completedNodeDecoder : Json.Decode.Decoder GraphNodeId
 completedNodeDecoder =
