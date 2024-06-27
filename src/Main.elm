@@ -27,6 +27,7 @@ import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
 import YamlHelp
 import Zoom exposing (OnZoom(..), Zoom)
+import Html.Attributes exposing (style)
 
 
 type Model
@@ -288,7 +289,7 @@ view model =
                 [ Html.div
                     []
                     (buttonList |> List.Nonempty.toList |> List.sortBy .cluster |> List.map .button)
-                , Html.div [] [ svgElement ]
+                , Html.div [ Html.Attributes.style "overflow" "hidden" ] [ svgElement ]
                 ]
 
         DecodingError ->
