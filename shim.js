@@ -12,7 +12,8 @@ export const jsInit = (course_nodes, serializations, completed_nodes, dependenci
         Elm.Main.init({
             node,
             flags: {
-                clusters: Object.values(serializations).map(({name, yaml}) => { return { cluster: name, yaml } }),
+                nodes: Object.values(course_nodes),
+                clusters: Object.values(serializations).map(({id, name, yaml}) => { return { id, cluster: name, yaml } }),
                 completed: Object.values(completed_nodes),
                 dependencies: Object.values(dependencies)
             }

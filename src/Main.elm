@@ -95,6 +95,8 @@ isSameGraphNode graphNodeId graphNode =
 init : Json.Decode.Value -> ( Model, Cmd Msg )
 init json =
     let
+        -- clusters hebben ID
+        -- nodes kunnen aangeleverd worden met cluster ID en met course_module_id
         flags =
             Json.Decode.decodeValue flagsDecoder json
     in
@@ -231,7 +233,7 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
-                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#section" ++ (Debug.log "node:" (Debug.toString node)) ] children)
+                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#section-" ++ node.label.course_module_id ] children)
                 ]
             )
         , R.edgeDrawer
@@ -332,12 +334,13 @@ dependencyDecoder =
 
 
 type alias NamedYaml =
-    { cluster : String, yaml : String }
+    { id: String, cluster : String, yaml : String }
 
 
 clusterWithYamlDecoder : Json.Decode.Decoder NamedYaml
 clusterWithYamlDecoder =
     Json.Decode.succeed NamedYaml
+        |> required "id" Json.Decode.string
         |> required "cluster" Json.Decode.string
         |> required "yaml" Json.Decode.string
 
