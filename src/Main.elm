@@ -1,6 +1,8 @@
 module Main exposing (main)
 
 import Browser
+import Browser.Dom
+import Browser.Events
 import Color
 import Dagre.Attributes as DA
 import Dict
@@ -18,6 +20,7 @@ import Render.StandardDrawers as RSD
 import Render.StandardDrawers.Attributes as RSDA
 import Render.StandardDrawers.Types as RSDT
 import String.Extra
+import Task
 import TypedSvg as TS
 import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
@@ -27,7 +30,7 @@ import Zoom exposing (OnZoom, Zoom)
 
 type Model
     = DecodingError
-    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom: Maybe Zoom }
+    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom : Maybe Zoom }
 
 
 rotateLeft : ListNonempty a -> Int -> ListNonempty a
@@ -74,6 +77,8 @@ type Msg
     | SelectNode Int
     | RotateLeft Int
     | ZoomMsg OnZoom
+    | WindowResizeOccurred
+    | GotSvgElement (Result Browser.Dom.Error Browser.Dom.Element)
 
 
 isSameGraphNode : { a | id : String, namespace : String } -> { b | id : String, namespace : String } -> Bool
@@ -145,24 +150,34 @@ init json =
             ( DecodingError, Cmd.none )
 
 
-update : Msg -> Model -> ( Model, Cmd msg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    case msg of
-        SelectNode v ->
-            ( model, Cmd.none )
+    case model of
+        DecodingError -> ( model, Cmd.none )
+        ValidModel { clusters, completed, dependencies, zoom } ->
+            case msg of
 
-        SelectEdge ( from, to ) ->
-            ( model, Cmd.none )
-
-        RotateLeft n ->
-            case model of
-                ValidModel { clusters, completed, dependencies, zoom } ->
-                    ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies, zoom = zoom }, Cmd.none )
-
-                DecodingError ->
+                SelectNode v ->
                     ( model, Cmd.none )
 
-        ZoomMsg _ -> ( model, Cmd.none)
+                SelectEdge ( from, to ) ->
+                    ( model, Cmd.none )
+
+                RotateLeft n ->
+                            ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies, zoom = zoom }, Cmd.none )
+
+                GotSvgElement (Ok elem) ->
+                    ( model, Debug.log (Debug.toString elem.element.width) Cmd.none )
+
+                GotSvgElement (Err _) ->
+                    ( model, Cmd.none )
+        
+                WindowResizeOccurred ->
+                     ( model, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing") )
+
+                ZoomMsg _ ->
+                    ( model, Cmd.none )
+
 
 viewGraph : Graph -> List GraphNode -> List GraphNodeId -> List Dependency -> List (Html.Attribute Msg) -> Html.Html Msg
 viewGraph g roots completed dependencies extraAttributes =
@@ -174,7 +189,8 @@ viewGraph g roots completed dependencies extraAttributes =
         [ DA.rankDir DA.LR
         , DA.widthDict widthDict
         ]
-        [ R.nodeDrawer
+        [ R.id "roadmapPluginDrawing"
+        , R.nodeDrawer
             (MyDagre.svgDrawNode
                 [ RSDA.label (\node -> node.label.title)
                 , RSDA.title (\node -> node.label.id) -- may want to prefix with namespace
@@ -262,11 +278,17 @@ view model =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     case model of
-        DecodingError -> Sub.none
+        DecodingError ->
+            Sub.none
+
         ValidModel { zoom } ->
-          case zoom of
-            Nothing -> Sub.none
-            Just actualZoom -> Zoom.subscriptions actualZoom ZoomMsg
+            case zoom of
+                Nothing ->
+                    Browser.Events.onResize (\_ _ -> WindowResizeOccurred)
+
+                Just actualZoom ->
+                    Sub.batch [ Browser.Events.onResize (\_ _ -> WindowResizeOccurred), Zoom.subscriptions actualZoom ZoomMsg ]
+
 
 completedNodeDecoder : Json.Decode.Decoder GraphNodeId
 completedNodeDecoder =
