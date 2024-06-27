@@ -8,6 +8,7 @@ import Dagre.Attributes as DA
 import Dict
 import Graph as G
 import Html
+import Html.Attributes
 import Html.Events
 import Json.Decode
 import Json.Decode.Pipeline exposing (required)
@@ -25,12 +26,16 @@ import TypedSvg as TS
 import TypedSvg.Attributes as TSA
 import Yaml.Decode as YDecode
 import YamlHelp
-import Zoom exposing (OnZoom, Zoom)
+import Zoom exposing (OnZoom(..), Zoom)
 
 
 type Model
     = DecodingError
-    | ValidModel { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom : Maybe Zoom }
+    | Valid ValidModel
+
+
+type alias ValidModel =
+    { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom : Maybe Zoom }
 
 
 rotateLeft : ListNonempty a -> Int -> ListNonempty a
@@ -139,7 +144,7 @@ init json =
             in
             case modelDataResult of
                 Ok lst ->
-                    ( ValidModel { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Cmd.none )
+                    ( Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Cmd.none )
 
                 Err e ->
                     ( DecodingError
@@ -153,10 +158,11 @@ init json =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case model of
-        DecodingError -> ( model, Cmd.none )
-        ValidModel { clusters, completed, dependencies, zoom } ->
-            case msg of
+        DecodingError ->
+            ( model, Cmd.none )
 
+        Valid ({ clusters, completed, dependencies, zoom } as oldModel) ->
+            case msg of
                 SelectNode v ->
                     ( model, Cmd.none )
 
@@ -164,19 +170,19 @@ update msg model =
                     ( model, Cmd.none )
 
                 RotateLeft n ->
-                            ( ValidModel { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies, zoom = zoom }, Cmd.none )
+                    ( Valid { clusters = rotateLeft clusters n, completed = completed, dependencies = dependencies, zoom = zoom }, Cmd.none )
 
                 GotSvgElement (Ok elem) ->
-                    ( model, Debug.log (Debug.toString elem.element.width) Cmd.none )
+                    ( Valid { oldModel | zoom = Just <| Zoom.init { width = elem.element.width, height = elem.element.height } }, Cmd.none )
 
                 GotSvgElement (Err _) ->
                     ( model, Cmd.none )
-        
-                WindowResizeOccurred ->
-                     ( model, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing") )
 
-                ZoomMsg _ ->
-                    ( model, Cmd.none )
+                WindowResizeOccurred ->
+                    ( model, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing") )
+
+                ZoomMsg zoomMsg ->
+                    ( Valid { oldModel | zoom = Maybe.map (Zoom.update zoomMsg) oldModel.zoom }, Cmd.none )
 
 
 viewGraph : Graph -> List GraphNode -> List GraphNodeId -> List Dependency -> List (Html.Attribute Msg) -> Html.Html Msg
@@ -251,10 +257,26 @@ viewGraph g roots completed dependencies extraAttributes =
 view : Model -> Html.Html Msg
 view model =
     case model of
-        ValidModel { clusters, completed, dependencies } ->
+        Valid { clusters, completed, dependencies, zoom } ->
             let
                 ( { name, graph, roots }, _ ) =
                     clusters
+
+                svgElement =
+                    viewGraph
+                        graph
+                        roots
+                        completed
+                        dependencies
+                        (Maybe.withDefault
+                            [ Html.Attributes.id "roadmapPluginDrawing" ]
+                            (Maybe.map
+                                (\existingZoom ->
+                                    Html.Attributes.id "roadmapPluginDrawing" :: Zoom.transform existingZoom :: Zoom.events existingZoom ZoomMsg
+                                )
+                                zoom
+                            )
+                        )
 
                 buttonList =
                     List.Nonempty.indexedMap
@@ -266,7 +288,7 @@ view model =
                 [ Html.div
                     []
                     (buttonList |> List.Nonempty.toList |> List.sortBy .cluster |> List.map .button)
-                , Html.div [] [ viewGraph graph roots completed dependencies [] ]
+                , Html.div [] [ svgElement ]
                 ]
 
         DecodingError ->
@@ -281,7 +303,7 @@ subscriptions model =
         DecodingError ->
             Sub.none
 
-        ValidModel { zoom } ->
+        Valid { zoom, clusters, completed, dependencies } ->
             case zoom of
                 Nothing ->
                     Browser.Events.onResize (\_ _ -> WindowResizeOccurred)
