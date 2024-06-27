@@ -58,6 +58,7 @@ class block_roadmap extends block_base
         global $COURSE;
         global $USER;
 
+
         $serializations = $DB->get_records('clusters', array("courseid" => $COURSE->id));
         // having trouble with JOIN via DB API, so taking the long route
         $sections = $DB->get_records('course_sections', array("course" => $COURSE->id));
@@ -116,6 +117,7 @@ class block_roadmap extends block_base
             'block_roadmap/roadmap',
             'jsInit',
             [
+                $course_nodes,
                 $serializations,
                 array_values($completed_nodes),
                 array_values($prerequisites),

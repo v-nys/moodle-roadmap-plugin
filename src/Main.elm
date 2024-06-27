@@ -61,7 +61,7 @@ type alias Graph =
 
 
 type alias GraphNode =
-    { id : String, namespace : String, title : String }
+    { id : String, namespace : String, title : String, course_module_id: String }
 
 
 type alias GraphNodeId =
@@ -78,6 +78,7 @@ type Edge
 
 
 type Msg
+-- TODO: remove SelectEdge, SelectNode? not using them
     = SelectEdge ( Int, Int )
     | SelectNode Int
     | RotateLeft Int
@@ -104,10 +105,11 @@ init json =
                 nodeListDecoder clusterName =
                     YDecode.field "nodes" <|
                         YDecode.list <|
-                            YDecode.map3 GraphNode
+                            YDecode.map4 GraphNode
                                 (YDecode.field "id" YDecode.string)
                                 (YDecode.succeed clusterName)
                                 (YDecode.field "title" YDecode.string)
+                                (YDecode.succeed "2") -- TODO: get this from nodes flag
 
                 clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
                 clusterGraphNodesResults =
@@ -229,7 +231,7 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
-                , MyDagre.wrapper (\node children -> TS.a [] children)
+                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#" ++ node.label.course_module_id ] children)
                 ]
             )
         , R.edgeDrawer

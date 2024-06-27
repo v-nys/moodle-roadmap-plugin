@@ -1,5 +1,7 @@
 // fragment of glue code
-export const jsInit = (serializations, completed_nodes, dependencies) => {
+export const jsInit = (course_nodes, serializations, completed_nodes, dependencies) => {
+    console.log("All course nodes:");
+    console.debug(course_nodes);
     console.log("Completed nodes (not yet handled by Elm):");
     console.debug(completed_nodes);
     console.log("Dependencies (not yet handled by Elm):");
