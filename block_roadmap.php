@@ -117,7 +117,7 @@ class block_roadmap extends block_base
             'block_roadmap/roadmap',
             'jsInit',
             [
-                $course_nodes,
+                $namespaced_nodes,
                 $serializations,
                 array_values($completed_nodes),
                 array_values($prerequisites),

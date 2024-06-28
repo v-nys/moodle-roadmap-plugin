@@ -35,7 +35,11 @@ type Model
 
 
 type alias ValidModel =
-    { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }, completed : List GraphNodeId, dependencies : List Dependency, zoom : Maybe Zoom }
+    { clusters : ListNonempty { name : String, graph : Graph, roots : List GraphNode }
+    , completed : List GraphNodeId
+    , dependencies : List Dependency
+    , zoom : Maybe Zoom
+    }
 
 
 rotateLeft : ListNonempty a -> Int -> ListNonempty a
@@ -61,7 +65,7 @@ type alias Graph =
 
 
 type alias GraphNode =
-    { id : String, namespace : String, title : String, course_module_id: String }
+    { id : String, namespace : String, title : String, course_sections_id : Int }
 
 
 type alias GraphNodeId =
@@ -77,8 +81,9 @@ type Edge
     = Edge { start : GraphNodeId, end : GraphNodeId } EdgeType
 
 
-type Msg
--- TODO: remove SelectEdge, SelectNode? not using them
+type
+    Msg
+    -- TODO: remove SelectEdge, SelectNode? not using them
     = SelectEdge ( Int, Int )
     | SelectNode Int
     | RotateLeft Int
@@ -95,38 +100,55 @@ isSameGraphNode graphNodeId graphNode =
 init : Json.Decode.Value -> ( Model, Cmd Msg )
 init json =
     let
-        -- clusters hebben ID
-        -- nodes kunnen aangeleverd worden met cluster ID en met course_module_id
         flags =
-            Json.Decode.decodeValue flagsDecoder json
+            Debug.log "the flags: " (Json.Decode.decodeValue flagsDecoder json)
     in
     case flags of
-        Ok { clusters, completed, dependencies } ->
+        Ok { nodes, clusters, completed, dependencies } ->
             let
                 nodeListDecoder : String -> YDecode.Decoder (List GraphNode)
                 nodeListDecoder clusterName =
                     YDecode.field "nodes" <|
                         YDecode.list <|
-                            YDecode.map4 GraphNode
+                            YDecode.map3
+                                (\id namespace title ->
+                                    GraphNode
+                                        id
+                                        namespace
+                                        title
+                                        (Maybe.withDefault
+                                            0
+                                            (Maybe.map
+                                                .course_sections_id
+                                                (List.Extra.find (\node -> node.slug == id && node.cluster_name == namespace) nodes)
+                                            )
+                                        )
+                                )
                                 (YDecode.field "id" YDecode.string)
                                 (YDecode.succeed clusterName)
                                 (YDecode.field "title" YDecode.string)
-                                (YDecode.succeed "2") -- TODO: get this from nodes flag
 
                 clusterGraphNodesResults : List (Result YDecode.Error (List GraphNode))
                 clusterGraphNodesResults =
-                    List.map (\{ cluster, yaml } -> YDecode.fromString (nodeListDecoder cluster) yaml) clusters
+                    List.map
+                        (\{ cluster, yaml } -> YDecode.fromString (nodeListDecoder cluster) yaml)
+                        clusters
 
                 allGraphNodesResult : Result YDecode.Error (List GraphNode)
                 allGraphNodesResult =
-                    List.foldr (\separateResult acc -> Result.map2 (++) separateResult acc) (Ok []) clusterGraphNodesResults
+                    List.foldr
+                        (\separateResult acc -> Result.map2 (++) separateResult acc)
+                        (Ok [])
+                        clusterGraphNodesResults
 
                 separateClusterResults : List (Result YDecode.Error { name : String, graph : Graph, roots : List GraphNode })
                 separateClusterResults =
                     List.map
                         (\{ cluster, yaml } ->
                             Result.andThen
-                                (\allGraphNodes -> YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml)
+                                (\allGraphNodes ->
+                                    YDecode.fromString (clusterDecoder cluster allGraphNodes) yaml
+                                )
                                 allGraphNodesResult
                         )
                         clusters
@@ -147,9 +169,8 @@ init json =
                             Err e
             in
             case modelDataResult of
-
                 Ok lst ->
-                    (Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing"))
+                    ( Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing") )
 
                 Err e ->
                     ( DecodingError
@@ -210,7 +231,7 @@ viewGraph g roots completed dependencies extraAttributes =
                     (\node ->
                         let
                             dependency =
-                                Debug.log "Dependency:" (List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies)
+                                List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies
 
                             dependenciesMet =
                                 case dependency of
@@ -233,7 +254,13 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
-                , MyDagre.wrapper (\node children -> TS.a [TSA.href <| "#section-" ++ node.label.course_module_id ] children)
+                , MyDagre.wrapper
+                    (\node children ->
+                        TS.a
+                            -- [ TSA.href <| "#section-" ++ node.label.namespace ++ "__" ++ node.label.id ]
+                            [ TSA.href <| "#section-" ++ (node.label.course_sections_id |> String.fromInt) ]
+                            children
+                    )
                 ]
             )
         , R.edgeDrawer
@@ -334,7 +361,7 @@ dependencyDecoder =
 
 
 type alias NamedYaml =
-    { id: String, cluster : String, yaml : String }
+    { id : String, cluster : String, yaml : String }
 
 
 clusterWithYamlDecoder : Json.Decode.Decoder NamedYaml
@@ -345,13 +372,26 @@ clusterWithYamlDecoder =
         |> required "yaml" Json.Decode.string
 
 
+type alias NodeRecord =
+    { cluster_name : String, slug : String, course_sections_id : Int }
+
+
+nodeRecordDecoder : Json.Decode.Decoder NodeRecord
+nodeRecordDecoder =
+    Json.Decode.succeed NodeRecord
+        |> required "cluster_name" Json.Decode.string
+        |> required "slug" Json.Decode.string
+        |> required "course_sections_id" Json.Decode.int
+
+
 type alias Flags =
-    { clusters : List NamedYaml, completed : List GraphNodeId, dependencies : List Dependency }
+    { nodes : List NodeRecord, clusters : List NamedYaml, completed : List GraphNodeId, dependencies : List Dependency }
 
 
 flagsDecoder : Json.Decode.Decoder Flags
 flagsDecoder =
     Json.Decode.succeed Flags
+        |> required "nodes" (Json.Decode.list nodeRecordDecoder)
         |> required "clusters" (Json.Decode.list clusterWithYamlDecoder)
         |> required "completed" (Json.Decode.list completedNodeDecoder)
         |> required "dependencies" (Json.Decode.list dependencyDecoder)
