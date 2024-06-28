@@ -117,7 +117,16 @@ class block_roadmap extends block_base
             'block_roadmap/roadmap',
             'jsInit',
             [
-                $namespaced_nodes,
+                array_map(function ($namespaced_node) use ($sections) {
+                    $matching_sections = array_filter($sections, function ($section) use ($namespaced_node) {
+                      return $section->id == $namespaced_node->course_sections_id;
+                    });
+                    // there should be exactly one match
+                    $section = array_values($matching_sections)[0];
+                    $replacement_node = clone $namespaced_node;
+                    $replacement_node->course_sections_id = $section->section;
+                    return $replacement_node;
+                }, $namespaced_nodes),
                 $serializations,
                 array_values($completed_nodes),
                 array_values($prerequisites),
