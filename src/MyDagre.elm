@@ -114,10 +114,12 @@ type alias NodeDrawerConfig n msg =
     , fill : Node n -> Color
     , title : Node n -> String
     , xLabels : List (NodeAttributes n -> Svg msg)
+    , overlay : Node n -> Maybe (Svg msg)
     , wrapper : Maybe (Node n -> List (Svg msg) -> Svg msg)
     }
 
 
+-- if I am not mistaken, this is a kind of default implementation
 defNodeDrawerConfig : NodeDrawerConfig n msg
 defNodeDrawerConfig =
     let
@@ -138,6 +140,7 @@ defNodeDrawerConfig =
     , fill = \_ -> Color.rgb255 178 235 242
     , title = f
     , xLabels = []
+    , overlay = \_ -> Nothing
     , wrapper = Nothing
     }
 

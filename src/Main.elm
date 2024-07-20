@@ -24,6 +24,8 @@ import String.Extra
 import Task
 import TypedSvg as TS
 import TypedSvg.Attributes as TSA
+import TypedSvg.Core as TSC
+import TypedSvg.Types as TST
 import Yaml.Decode as YDecode
 import YamlHelp
 import Zoom exposing (OnZoom(..), Zoom)
@@ -211,6 +213,11 @@ update msg model =
                     ( Valid { oldModel | zoom = Maybe.map (Zoom.update zoomMsg) oldModel.zoom }, Cmd.none )
 
 
+overlay : (a -> Maybe (TSC.Svg Msg)) -> RSDA.Attribute { c | overlay : a -> Maybe (TSC.Svg Msg) }
+overlay f =
+    \ndc -> { ndc | overlay = f }
+
+
 viewGraph : Graph -> List GraphNode -> List GraphNodeId -> List Dependency -> List (Html.Attribute Msg) -> Html.Html Msg
 viewGraph g roots completed dependencies extraAttributes =
     let
@@ -254,10 +261,87 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
+
+                {-
+                   I would like to supply an overlay here for the bottom right corner of the node
+                   so something like .overlay (\node -> ...)
+                   assuming node has info on accessibility in it
+                   not sure if that is the case with the Moodle nodes
+
+                   But how does this whole thing work?
+
+                   svgDrawNode (official version) takes:
+                   - a list of attributes for configuration
+                   - a (NodeAttributes n) value
+
+                   NodeAttributes is defined as having:
+                   - a (Node n) (this depends on the graph, i.e. n, in this case, is a GraphNode)
+                   - a coordinate pair
+                   - a width
+                   - a height
+
+                   And svgDrawNode produces an Svg msg.
+
+                   So, assuming the Moodle version of GraphNode also contains accessibility info...
+                   An attribute "overlayIcon" which takes a node and overlays a selected SVG would be suited.
+                   For now, that can just be a red, yellow or green circle.
+                   Once it's working, I can convert some icons to TypedSVG.
+
+                   There is the Attribute type, defined as type alias Attribute c = c -> c
+                   And then there are various functions like `fill`, which take a value and produce an attribute
+                   e.g. `fill : (a -> Color) -> Attribute { c | fill : a -> Color }`
+                   How to interpret this?
+
+                   - `c` is a free variable
+                   - `| ...` means that the produced object has this field (and could have others)
+                   - `Attribute c` was defined as `c -> c`, so operations are cumulative
+                     so I think if we add a fill and a shape
+                     the outcome must have both a fill field and a shape field, not just one
+                   - `(a -> Color)` is not 100% clear to me
+                     it's a function producing a color, but from what?
+                     other code suggests this a is the Node n type, so in this case GraphNode
+
+                   So if I wanted to add my own "overlay" attribute...
+                   It'd be something like:
+                   overlay: (a -> Svg Msg) -> Attribute { c | overlay : (a -> Svg msg) }
+
+                   And it would simply add that attribute to the surrounding object...
+
+                -}
+                , overlay
+                    (\node ->
+                        let
+                            dependency =
+                                List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies
+
+                            dependenciesMet =
+                                case dependency of
+                                    Just { all, any } ->
+                                        List.all (\predecessor -> List.any (isSameGraphNode predecessor) completed) all
+                                            && List.any (\predecessor -> List.any (isSameGraphNode predecessor) completed) any
+
+                                    Nothing ->
+                                        False
+
+                            unlocked =
+                                List.any (isSameGraphNode node.label) roots || dependenciesMet
+                        in
+                        if List.any (isSameGraphNode node.label) completed then
+                            -- TODO: needs the right properties
+                            -- specifically, size and color
+                            -- position could be specified here, but not in absolute terms
+                            -- svgDrawNode would have to use any position specified here as *offset*
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.green) ] [])
+
+                        else if unlocked then
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.orange) ] [])
+
+                        else
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.red) ] [])
+                    )
                 , MyDagre.wrapper
                     (\node children ->
                         TS.a
-                            -- [ TSA.href <| "#section-" ++ node.label.namespace ++ "__" ++ node.label.id ]
                             [ TSA.href <| "#section-" ++ (node.label.course_sections_id |> String.fromInt) ]
                             children
                     )
