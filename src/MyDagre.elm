@@ -201,7 +201,7 @@ svgDrawNode edits nodeAtrib =
             }
 
         overlay =
-            config.overlay (posX + width / 2) (posY - height / 2) node
+            config.overlay (posX + width / 2) (posY + height / 2) node
 
         mainElementBaseProperties =
             [ TS.title [] [ TC.text <| config.title node ]
@@ -215,12 +215,8 @@ svgDrawNode edits nodeAtrib =
                 gAtrib
                 (case overlay of 
                   Nothing -> mainElementBaseProperties
-                  -- TODO set x and y to posX + width / 2 and posY - height / 2 
                   Just(svgElement) ->
-                    let
-                      moved = svgElement
-                    in
-                    (moved :: mainElementBaseProperties))
+                    mainElementBaseProperties ++ [svgElement])
     in
     case config.wrapper of
         Nothing ->

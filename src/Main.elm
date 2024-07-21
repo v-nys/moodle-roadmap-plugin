@@ -280,17 +280,37 @@ viewGraph g roots completed dependencies extraAttributes =
                                 List.any (isSameGraphNode node.label) roots || dependenciesMet
                         in
                         if List.any (isSameGraphNode node.label) completed then
-                            -- TODO: needs the right properties
-                            -- specifically, size and color
-                            -- position could be specified here, but not in absolute terms
-                            -- svgDrawNode would have to use any position specified here as *offset*
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.green) ] [])
+                            Just
+                                (TS.circle
+                                    [ TSA.r (TST.px 5)
+                                    , TSA.cx (TST.px posX)
+                                    , TSA.cy (TST.px posY)
+                                    , TSA.fill (TST.Paint Color.green)
+                                    ]
+                                    []
+                                )
 
                         else if unlocked then
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.orange) ] [])
+                            Just
+                                (TS.circle
+                                    [ TSA.r (TST.px 5)
+                                    , TSA.cx (TST.px posX)
+                                    , TSA.cy (TST.px posY)
+                                    , TSA.fill (TST.Paint Color.orange)
+                                    ]
+                                    []
+                                )
 
                         else
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.red) ] [])
+                            Just
+                                (TS.circle
+                                    [ TSA.r (TST.px 5)
+                                    , TSA.cx (TST.px posX)
+                                    , TSA.cy (TST.px posY)
+                                    , TSA.fill (TST.Paint Color.red)
+                                    ]
+                                    []
+                                )
                     )
                 , MyDagre.wrapper
                     (\node children ->
