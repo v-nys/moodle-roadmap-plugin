@@ -15,6 +15,7 @@ import TypedSvg.Attributes as TA
 import TypedSvg.Core as TC exposing (Svg)
 import TypedSvg.Events as TE
 import TypedSvg.Types as TT
+import VirtualDom as VD
 
 
 type alias DrawConfig n e msg =
@@ -114,12 +115,15 @@ type alias NodeDrawerConfig n msg =
     , fill : Node n -> Color
     , title : Node n -> String
     , xLabels : List (NodeAttributes n -> Svg msg)
-    , overlay : Node n -> Maybe (Svg msg)
+    , overlay : Float -> Float -> Node n -> Maybe (Svg msg)
     , wrapper : Maybe (Node n -> List (Svg msg) -> Svg msg)
     }
 
 
+
 -- if I am not mistaken, this is a kind of default implementation
+
+
 defNodeDrawerConfig : NodeDrawerConfig n msg
 defNodeDrawerConfig =
     let
@@ -140,12 +144,14 @@ defNodeDrawerConfig =
     , fill = \_ -> Color.rgb255 178 235 242
     , title = f
     , xLabels = []
-    , overlay = \_ -> Nothing
+    , overlay = \_ _ _ -> Nothing
     , wrapper = Nothing
     }
 
-wrapper : (Node n -> List (Svg msg) -> Svg msg) -> Attribute { c | wrapper : Maybe (Node n -> List (Svg msg) -> Svg msg)}
-wrapper f = \edc -> { edc | wrapper = Just f}
+
+wrapper : (Node n -> List (Svg msg) -> Svg msg) -> Attribute { c | wrapper : Maybe (Node n -> List (Svg msg) -> Svg msg) }
+wrapper f =
+    \edc -> { edc | wrapper = Just f }
 
 
 svgDrawNode : List (Attribute (NodeDrawerConfig n msg)) -> NodeDrawer n msg
@@ -153,6 +159,10 @@ svgDrawNode edits nodeAtrib =
     let
         node =
             nodeAtrib.node
+
+        width = nodeAtrib.width
+
+        height = nodeAtrib.height
 
         ( posX, posY ) =
             nodeAtrib.coord
@@ -190,14 +200,27 @@ svgDrawNode edits nodeAtrib =
             , fill = config.fill
             }
 
+        overlay =
+            config.overlay (posX + width / 2) (posY - height / 2) node
+
+        mainElementBaseProperties =
+            [ TS.title [] [ TC.text <| config.title node ]
+            , nodeShapeDrawer shapeAtrib nodeAtrib
+            , centeredText lbl config.fontSize ( posX, posY )
+            , xLabelsDrawer config.xLabels nodeAtrib
+            ]
+
         mainElement =
             g
                 gAtrib
-                [ TS.title [] [ TC.text <| config.title node ]
-                , nodeShapeDrawer shapeAtrib nodeAtrib
-                , centeredText lbl config.fontSize ( posX, posY )
-                , xLabelsDrawer config.xLabels nodeAtrib
-                ]
+                (case overlay of 
+                  Nothing -> mainElementBaseProperties
+                  -- TODO set x and y to posX + width / 2 and posY - height / 2 
+                  Just(svgElement) ->
+                    let
+                      moved = svgElement
+                    in
+                    (moved :: mainElementBaseProperties))
     in
     case config.wrapper of
         Nothing ->

@@ -8,7 +8,7 @@ import Dagre.Attributes as DA
 import Dict
 import Graph as G
 import Html
-import Html.Attributes exposing (style)
+import Html.Attributes
 import Html.Events
 import Json.Decode
 import Json.Decode.Pipeline exposing (required)
@@ -51,7 +51,7 @@ rotateLeft z n =
 
     else
         case z of
-            ( h, [] ) ->
+            ( _, [] ) ->
                 z
 
             ( h1, h2 :: t ) ->
@@ -174,12 +174,12 @@ init json =
                 Ok lst ->
                     ( Valid { clusters = lst, completed = completed, dependencies = dependencies, zoom = Nothing }, Task.attempt GotSvgElement (Browser.Dom.getElement "roadmapPluginDrawing") )
 
-                Err e ->
+                Err _ ->
                     ( DecodingError
                     , Cmd.none
                     )
 
-        Err e ->
+        Err _ ->
             ( DecodingError, Cmd.none )
 
 
@@ -191,10 +191,10 @@ update msg model =
 
         Valid ({ clusters, completed, dependencies, zoom } as oldModel) ->
             case msg of
-                SelectNode v ->
+                SelectNode _ ->
                     ( model, Cmd.none )
 
-                SelectEdge ( from, to ) ->
+                SelectEdge ( _, _ ) ->
                     ( model, Cmd.none )
 
                 RotateLeft n ->
@@ -213,7 +213,7 @@ update msg model =
                     ( Valid { oldModel | zoom = Maybe.map (Zoom.update zoomMsg) oldModel.zoom }, Cmd.none )
 
 
-overlay : (a -> Maybe (TSC.Svg Msg)) -> RSDA.Attribute { c | overlay : a -> Maybe (TSC.Svg Msg) }
+overlay : (Float -> Float -> a -> Maybe (TSC.Svg Msg)) -> RSDA.Attribute { c | overlay : Float -> Float -> a -> Maybe (TSC.Svg Msg) }
 overlay f =
     \ndc -> { ndc | overlay = f }
 
@@ -261,55 +261,8 @@ viewGraph g roots completed dependencies extraAttributes =
                         else
                             Color.darkGray
                     )
-
-                {-
-                   I would like to supply an overlay here for the bottom right corner of the node
-                   so something like .overlay (\node -> ...)
-                   assuming node has info on accessibility in it
-                   not sure if that is the case with the Moodle nodes
-
-                   But how does this whole thing work?
-
-                   svgDrawNode (official version) takes:
-                   - a list of attributes for configuration
-                   - a (NodeAttributes n) value
-
-                   NodeAttributes is defined as having:
-                   - a (Node n) (this depends on the graph, i.e. n, in this case, is a GraphNode)
-                   - a coordinate pair
-                   - a width
-                   - a height
-
-                   And svgDrawNode produces an Svg msg.
-
-                   So, assuming the Moodle version of GraphNode also contains accessibility info...
-                   An attribute "overlayIcon" which takes a node and overlays a selected SVG would be suited.
-                   For now, that can just be a red, yellow or green circle.
-                   Once it's working, I can convert some icons to TypedSVG.
-
-                   There is the Attribute type, defined as type alias Attribute c = c -> c
-                   And then there are various functions like `fill`, which take a value and produce an attribute
-                   e.g. `fill : (a -> Color) -> Attribute { c | fill : a -> Color }`
-                   How to interpret this?
-
-                   - `c` is a free variable
-                   - `| ...` means that the produced object has this field (and could have others)
-                   - `Attribute c` was defined as `c -> c`, so operations are cumulative
-                     so I think if we add a fill and a shape
-                     the outcome must have both a fill field and a shape field, not just one
-                   - `(a -> Color)` is not 100% clear to me
-                     it's a function producing a color, but from what?
-                     other code suggests this a is the Node n type, so in this case GraphNode
-
-                   So if I wanted to add my own "overlay" attribute...
-                   It'd be something like:
-                   overlay: (a -> Svg Msg) -> Attribute { c | overlay : (a -> Svg msg) }
-
-                   And it would simply add that attribute to the surrounding object...
-
-                -}
                 , overlay
-                    (\node ->
+                    (\posX posY node ->
                         let
                             dependency =
                                 List.Extra.find (\d -> d.slug == node.label.id && d.cluster == node.label.namespace) dependencies
@@ -331,13 +284,13 @@ viewGraph g roots completed dependencies extraAttributes =
                             -- specifically, size and color
                             -- position could be specified here, but not in absolute terms
                             -- svgDrawNode would have to use any position specified here as *offset*
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.green) ] [])
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.green) ] [])
 
                         else if unlocked then
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.orange) ] [])
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.orange) ] [])
 
                         else
-                            Just (TS.circle [ TSA.r (TST.px 5), TSA.fill (TST.Paint Color.red) ] [])
+                            Just (TS.circle [ TSA.r (TST.px 5), TSA.x (TST.px posX), TSA.y (TST.px posY), TSA.fill (TST.Paint Color.red) ] [])
                     )
                 , MyDagre.wrapper
                     (\node children ->
@@ -375,7 +328,7 @@ view model =
     case model of
         Valid { clusters, completed, dependencies, zoom } ->
             let
-                ( { name, graph, roots }, _ ) =
+                ( { graph, roots }, _ ) =
                     clusters
 
                 svgElement =
@@ -419,7 +372,7 @@ subscriptions model =
         DecodingError ->
             Sub.none
 
-        Valid { zoom, clusters, completed, dependencies } ->
+        Valid { zoom } ->
             case zoom of
                 Nothing ->
                     Browser.Events.onResize (\_ _ -> WindowResizeOccurred)
